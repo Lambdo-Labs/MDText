@@ -61,7 +61,7 @@ see [Wikipedia](https://en.wikipedia.org/wiki/Markdown)
 //                    .multilineTextAlignment(.leading)
                     
                 
-                MDText(markdown: markdown)
+//                MDText(markdown: markdown)
             }
             .padding(.horizontal)
         }
@@ -69,11 +69,11 @@ see [Wikipedia](https://en.wikipedia.org/wiki/Markdown)
     }
     
     func onLoad() {
-        self.markdown =
-        """
-here is a **preview** and is very *long* !ssd
-that is multiple lines
-"""
+//        self.markdown =
+//        """
+//here is a **preview** and is very *long* !ssd
+//that is multiple lines
+//"""
     }
 }
 

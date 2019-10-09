@@ -8,8 +8,10 @@
 
 import SwiftUI
 import Combine
+import UIKit
 
 protocol MarkdownRule {
+    var id: String { get }
     var regex: RegexMarkdown { get }
     //    func replace(_ text: String) -> Text
 }
@@ -25,6 +27,39 @@ struct MDTextGroup {
         return applicableRules.dropFirst().reduce(firstRule.regex.output(for: string)) { $1.regex.strategy($0) }
     }
     
+    var viewType: MDViewType {
+        applicableRules.contains(where: { $0.id == BaseMarkdownRules.link.id || $0.id == BaseMarkdownRules.hyperlink.id }) ?
+            .link(self) : .text(self.text)
+    }
+    
+    var urlStr: String {
+        RegexMarkdown.url(for: string)
+    }
+    
+}
+
+enum MDViewType {
+    case text(Text), link(MDTextGroup)
+}
+
+struct MDViewGroup: Identifiable {
+    let id = UUID()
+    var type: MDViewType
+    var view: some View {
+        switch type {
+        case .link(let group):
+            return Button(action: {self.onLinkTap(urlStr: group.urlStr)}, label: {group.text})
+                .ereaseToAnyView()
+        case .text(let text):
+            return text.ereaseToAnyView()
+        }
+    }
+    
+    func onLinkTap(urlStr: String) {
+        print(urlStr)
+        guard let url = URL(string: urlStr) else { return }
+        UIApplication.shared.open(url, options: [:])
+    }
 }
 
 
@@ -37,12 +72,24 @@ struct RegexMarkdown: Equatable {
     var matchOut: String
     var strategy: (Text) -> Text
     func output(for string: String) -> Text {
-        guard !matchIn.isEmpty else {
-            return Text(string)
-        }
-        let result = string.replacingOccurrences(of: self.matchIn, with: self.matchOut, options: .regularExpression)
+        let result = outputString(for: string)
         let text = Text(result)
         return strategy(text)
+    }
+    
+    func outputString(for string: String) -> String {
+        guard !matchIn.isEmpty else {
+            return string
+        }
+        return string.replacingOccurrences(of: self.matchIn, with: self.matchOut, options: .regularExpression)
+    }
+    
+    static func url(for string: String) -> String {
+        let matcher = try! NSRegularExpression(pattern: #"((http(s)?:\/\/.)?(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*))"#)
+        guard let match = matcher.firstMatch(in: string, range: NSRange(location: 0, length: string.utf16.count)) else { return ""}
+        let result = string[Range(match.range, in: string)!]
+        print(result)
+        return String(result)
     }
 }
 
@@ -60,6 +107,7 @@ enum BaseMarkdownRules: String, CaseIterable, MarkdownRule {
     
     
     case none, header, link, bold, hyperlink, emphasis
+    var id: String { self.rawValue }
     //
     //    , , del, quote, inline, ul, ol, blockquotes
     
@@ -151,6 +199,38 @@ final class MDTextVM: ObservableObject {
         return textGroups.map{ $0.text}.reduce(Text(""), +)
     }
     
+    func parseViews(string: String, for markdownRules: [MarkdownRule]) -> [MDViewGroup] {
+        let firstGroup = MDTextGroup(string: string, rules: [BaseMarkdownRules.none])
+        let textGroups = markdownRules.reduce([firstGroup]) { (result, rule) -> [MDTextGroup] in
+            return result.flatMap{ self.replace(group: $0, for: rule)}
+        }
+        
+        let allViewGroups = textGroups.dropFirst().reduce([MDViewGroup(type: textGroups[0].viewType)]) { (viewGroups, textGroup) -> [MDViewGroup] in
+            let previous = viewGroups.last!
+            if case .text(let previousText) = previous.type, case .text(let currentText) = textGroup.viewType {
+                let updatedText = previousText + currentText
+                return viewGroups.dropLast() + [MDViewGroup(type: .text(updatedText))]
+            } else {
+                return viewGroups + [MDViewGroup(type: textGroup.viewType)]
+            }
+            // if previous is just text
+        }
+        return allViewGroups
+    }
+    
+    func replaceLInk(for textGroup: MDTextGroup) -> AnyView {
+        return Button(action: {
+            guard let url = URL(string: textGroup.string) else { return }
+            UIApplication.shared.open(url, options: [:])
+        }, label: {textGroup.text})
+            .ereaseToAnyView()
+        //
+        //        return textGroup.text.onTapGesture {
+        //                        guard let url = URL(string: textGroup.string) else { return }
+        //                        UIApplication.shared.open(url, options: [:])
+        //        }.ereaseToAnyView()
+    }
+    
     func replace(group: MDTextGroup, for rule: MarkdownRule) -> [MDTextGroup] {
         let string = group.string
         guard let regex = try? NSRegularExpression(pattern: rule.regex.matchIn)
@@ -221,15 +301,29 @@ public struct MDText: View, Equatable {
         self.alignment = alignment
     }
     
+    var views: [MDViewGroup] {
+        vm.parseViews(string: markdown, for: rules)
+    }
+    
     public var body: some View {
         VStack(alignment: alignment) {
             HStack { Spacer() }
-            vm.parseText(string: markdown, for: rules)
+            //            vm.parseText(string: markdown, for: rules)
+            ForEach(self.views, id: \.id) { viewGroup in
+                viewGroup.view
+            }
         }
-//        .onAppear(perform: parse)
+        .drawingGroup()
+        //        .onAppear(perform: parse)
     }
     
-    func parse() {
-        vm.parse(string: markdown, for: rules)
+    //    func parse() {
+    //        vm.parse(string: markdown, for: rules)
+    //    }
+}
+
+extension View {
+    func ereaseToAnyView() -> AnyView {
+        AnyView(self)
     }
 }

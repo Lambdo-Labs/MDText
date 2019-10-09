@@ -10,7 +10,7 @@ import SwiftUI
 import MDText
 
 struct ContentView: View {
-    let markdown =
+    @State var markdown =
 #"""
 # hello, This is Markdown Live Preview
 
@@ -51,9 +51,29 @@ see [Wikipedia](https://en.wikipedia.org/wiki/Markdown)
 """#
     var body: some View {
         ScrollView {
-            MDText(markdown: markdown)
-                .padding(.horizontal)
+            VStack(alignment: .leading) {
+                HStack {
+                    Spacer()
+                }
+//                Text("Description")
+//                .font(.headline)
+                MDText(markdown: markdown)
+//                    .multilineTextAlignment(.leading)
+                    
+                
+                MDText(markdown: markdown)
+            }
+            .padding(.horizontal)
         }
+    .onAppear(perform: onLoad)
+    }
+    
+    func onLoad() {
+        self.markdown =
+        """
+here is a **preview** and is very *long* !ssd
+that is multiple lines
+"""
     }
 }
 

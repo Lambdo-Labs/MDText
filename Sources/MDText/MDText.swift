@@ -74,7 +74,7 @@ enum BaseMarkdownRules: String, CaseIterable, MarkdownRule {
         case .hyperlink:
             return .init(matchIn: "<((?i)https?://(?:www\\.)?\\S+(?:/|\\b))>", matchOut: "$1", strategy: self.link(_:))
         case .emphasis:
-            return .init(matchIn: #"\s(\*|_)(.+?)\1"#, matchOut: "$2", strategy: self.emphasis(_:))
+            return .init(matchIn: #"(\s)(\*|_)(.+?)\2"#, matchOut: "$1$3", strategy: self.emphasis(_:))
         case .none:
             return .init(matchIn: "", matchOut: "", strategy: {$0})
         }
@@ -143,6 +143,14 @@ final class MDTextVM: ObservableObject {
         .assign(to: \.finalText, on: self)
     }
     
+    func parseText(string: String, for markdownRules: [MarkdownRule]) -> Text {
+        let firstGroup = MDTextGroup(string: string, rules: [BaseMarkdownRules.none])
+        let textGroups = markdownRules.reduce([firstGroup]) { (result, rule) -> [MDTextGroup] in
+            return result.flatMap{ self.replace(group: $0, for: rule)}
+        }
+        return textGroups.map{ $0.text}.reduce(Text(""), +)
+    }
+    
     func replace(group: MDTextGroup, for rule: MarkdownRule) -> [MDTextGroup] {
         let string = group.string
         guard let regex = try? NSRegularExpression(pattern: rule.regex.matchIn)
@@ -196,28 +204,29 @@ final class MDTextVM: ObservableObject {
 
 
 
-public struct MDText: View {
+public struct MDText: View, Equatable {
+    public static func == (lhs: MDText, rhs: MDText) -> Bool {
+        lhs.markdown == rhs.markdown
+    }
+    
     var markdown: String
+    var alignment: HorizontalAlignment
     
     var rules: [MarkdownRule] = BaseMarkdownRules.allCases
     
     @ObservedObject var vm = MDTextVM()
     
-    public init(markdown: String) {
+    public init(markdown: String, alignment: HorizontalAlignment = .leading) {
         self.markdown = markdown
+        self.alignment = alignment
     }
-    
-    
-    var down: some View {
-        vm.finalText.onAppear(perform: parse)
-    }
-    
     
     public var body: some View {
-        VStack {
+        VStack(alignment: alignment) {
             HStack { Spacer() }
-            down
+            vm.parseText(string: markdown, for: rules)
         }
+//        .onAppear(perform: parse)
     }
     
     func parse() {

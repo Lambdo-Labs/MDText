@@ -1,17 +1,17 @@
 //
 //  ContentView.swift
-//  MDText
+//  MDTextTestApp
 //
 //  Created by Andre Carrera on 10/9/19.
 //  Copyright © 2019 Lambdo. All rights reserved.
 //
+
 import SwiftUI
 import MDText
 
-struct ContentView_Previews: PreviewProvider {
-    
-    static let string =
-    #"""
+struct ContentView: View {
+    let markdown =
+#"""
 # hello, This is Markdown Live Preview
 
 ----
@@ -47,15 +47,18 @@ see [Wikipedia](https://en.wikipedia.org/wiki/Markdown)
 ----
 ## thanks
 * [markdown-js](https://github.com/evilstreak/markdown-js)
+
 """#
-    static var previews: some View {
-        //        Group {
+    var body: some View {
         ScrollView {
-            VStack {
-                MDText(markdown: ContentView_Previews.string)
-                
-            }
-            .padding(.horizontal)
+            MDText(markdown: markdown)
+                .padding(.horizontal)
         }
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
     }
 }

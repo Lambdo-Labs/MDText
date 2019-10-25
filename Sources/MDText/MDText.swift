@@ -205,7 +205,9 @@ final class MDTextVM: ObservableObject {
             return result.flatMap{ self.replace(group: $0, for: rule)}
         }
         
-        let allViewGroups = textGroups.dropFirst().reduce([MDViewGroup(type: textGroups[0].viewType)]) { (viewGroups, textGroup) -> [MDViewGroup] in
+        guard let firstViewGroup = textGroups.first?.viewType else { return [] }
+        
+        let allViewGroups = textGroups.dropFirst().reduce([MDViewGroup(type: firstViewGroup)]) { (viewGroups, textGroup) -> [MDViewGroup] in
             let previous = viewGroups.last!
             if case .text(let previousText) = previous.type, case .text(let currentText) = textGroup.viewType {
                 let updatedText = previousText + currentText
@@ -244,20 +246,14 @@ final class MDTextVM: ObservableObject {
         }
         let zippedRanges = zip(ranges.dropFirst(), ranges)
         // TODO: pass parent modifiers to children, just create a func in mdtextgroup
-        let firstGroup = ranges.first.flatMap { range -> [MDTextGroup] in
+        let beforeMatchesGroup = ranges.first.flatMap { range -> [MDTextGroup] in
             let lowerBound = String.Index(utf16Offset: 0, in: string)
             let upperBound = String.Index(utf16Offset: range.lowerBound, in: string)
             
             let nonMatchStr = String(string[lowerBound..<upperBound])
             return [MDTextGroup(string: nonMatchStr, rules: group.rules)]
             } ?? []
-        let lastGroup = ranges.last.flatMap { range -> [MDTextGroup] in
-            let lowerBound = String.Index(utf16Offset: range.upperBound, in: string)
-            let upperBound = String.Index(utf16Offset: string.count, in: string)
-            
-            let nonMatchStr = String(string[lowerBound..<upperBound])
-            return [MDTextGroup(string: nonMatchStr, rules: group.rules)]
-            } ?? []
+        
         let resultGroups: [MDTextGroup] =  zippedRanges.flatMap{ (next, current) -> [MDTextGroup] in
             let matchStr = String(string[Range(current, in: string)!])
             
@@ -274,7 +270,20 @@ final class MDTextVM: ObservableObject {
             return [MDTextGroup(string: matchStr, rules: group.rules + [rule])]
             } ?? []
         
-        let completeGroups = firstGroup + resultGroups + lastMatch + lastGroup
+        let afterMatchesGroup = ranges.last.flatMap { range -> [MDTextGroup] in
+            let lowerBound = String.Index(utf16Offset: range.upperBound, in: string)
+            let upperBound = String.Index(utf16Offset: string.count, in: string)
+            
+            if upperBound <= lowerBound { // basically if it ends with a match.
+                return []
+            }
+            
+            let nonMatchStr = String(string[lowerBound..<upperBound])
+            return [MDTextGroup(string: nonMatchStr, rules: group.rules)]
+            } ?? []
+        
+        
+        let completeGroups = beforeMatchesGroup + resultGroups + lastMatch + afterMatchesGroup
         return completeGroups
     }
     

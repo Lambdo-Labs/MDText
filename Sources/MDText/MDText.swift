@@ -272,7 +272,7 @@ final class MDTextVM: ObservableObject {
         
         let afterMatchesGroup = ranges.last.flatMap { range -> [MDTextGroup] in
             let lowerBound = String.Index(utf16Offset: range.upperBound, in: string)
-            let upperBound = String.Index(utf16Offset: string.count, in: string)
+            let upperBound = string.endIndex
             
             if upperBound <= lowerBound { // basically if it ends with a match.
                 return []

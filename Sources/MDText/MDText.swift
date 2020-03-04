@@ -255,8 +255,9 @@ final class MDTextVM: ObservableObject {
             } ?? []
         
         let resultGroups: [MDTextGroup] =  zippedRanges.flatMap{ (next, current) -> [MDTextGroup] in
-            let matchStr = String(string[Range(current, in: string)!])
-            
+            guard let range = Range(current, in: string) else { return [] }
+            let matchStr = String(string[range])
+
             let lowerBound = String.Index(utf16Offset: current.upperBound, in: string)
             let upperBound = String.Index(utf16Offset: next.lowerBound, in: string)
             

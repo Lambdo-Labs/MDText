@@ -323,7 +323,6 @@ public struct MDText: View, Equatable {
                 viewGroup.view
             }
         }
-        .drawingGroup()
         //        .onAppear(perform: parse)
     }
     

@@ -8,7 +8,11 @@
 
 import SwiftUI
 import Combine
+#if os(iOS)
 import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 protocol MarkdownRule {
     var id: String { get }
@@ -58,7 +62,11 @@ struct MDViewGroup: Identifiable {
     func onLinkTap(urlStr: String) {
         print(urlStr)
         guard let url = URL(string: urlStr) else { return }
-        UIApplication.shared.open(url, options: [:])
+        #if os(iOS)
+        UIApplication.shared.openURL(url, options: [:])
+        #elseif os(macOS)
+        NSWorkspace.shared.open(url)
+        #endif
     }
 }
 
@@ -223,7 +231,11 @@ final class MDTextVM: ObservableObject {
     func replaceLInk(for textGroup: MDTextGroup) -> AnyView {
         return Button(action: {
             guard let url = URL(string: textGroup.string) else { return }
-            UIApplication.shared.open(url, options: [:])
+            #if os(iOS)
+            UIApplication.shared.openURL(url, options: [:])
+            #elseif os(macOS)
+            NSWorkspace.shared.open(url)
+            #endif
         }, label: {textGroup.text})
             .ereaseToAnyView()
         //

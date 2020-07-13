@@ -279,7 +279,8 @@ final class MDTextVM: ObservableObject {
         }
         
         let lastMatch = ranges.last.flatMap{ range -> [MDTextGroup] in
-            let matchStr = String(string[Range(range, in: string)!])
+            guard let index = Range(range, in: string) else { return [] }
+            let matchStr = String(string[index])
             return [MDTextGroup(string: matchStr, rules: group.rules + [rule])]
             } ?? []
         

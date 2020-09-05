@@ -17,33 +17,41 @@ import AppKit
 protocol MarkdownRule {
     var id: String { get }
     var regex: RegexMarkdown { get }
-    //    func replace(_ text: String) -> Text
 }
 
 struct MDTextGroup {
     var string: String
     var rules: [MarkdownRule]
     var applicableRules: [MarkdownRule] {
-        rules.filter{$0.regex != BaseMarkdownRules.none.regex}
+        rules.filter { $0.regex != BaseMarkdownRules.none.regex }
     }
+
     var text: Text {
         guard let firstRule = applicableRules.first else { return rules[0].regex.output(for: string) }
+        //print("Rule: \(firstRule)")
         return applicableRules.dropFirst().reduce(firstRule.regex.output(for: string)) { $1.regex.strategy($0) }
     }
     
     var viewType: MDViewType {
-        applicableRules.contains(where: { $0.id == BaseMarkdownRules.link.id || $0.id == BaseMarkdownRules.hyperlink.id }) ?
-            .link(self) : .text(self.text)
+        if applicableRules.contains(where: { $0.id == BaseMarkdownRules.link.id || $0.id == BaseMarkdownRules.hyperlink.id }) {
+            return .link(self)
+        } else if applicableRules.contains(where: { $0.id == BaseMarkdownRules.inLineCode.id }) {
+            return .inLineCode(self) 
+        } else {
+            return .text(self.text)
+        }
     }
     
     var urlStr: String {
         RegexMarkdown.url(for: string)
     }
-    
+
 }
 
 enum MDViewType {
-    case text(Text), link(MDTextGroup)
+    case text(Text)
+    case inLineCode(MDTextGroup)
+    case link(MDTextGroup)
 }
 
 struct MDViewGroup: Identifiable {
@@ -51,16 +59,14 @@ struct MDViewGroup: Identifiable {
     var type: MDViewType
     var view: some View {
         switch type {
-        case .link(let group):
-            return Button(action: {self.onLinkTap(urlStr: group.urlStr)}, label: {group.text})
-                .ereaseToAnyView()
-        case .text(let text):
-            return text.ereaseToAnyView()
+        case .link(let group): return AnyView(Button(action: { self.onLinkTap(urlStr: group.urlStr) }, label: { group.text }))
+        case .text(let text): return AnyView(text)
+        case .inLineCode(let group): return AnyView(group.text.background(Color.gray))
         }
     }
     
     func onLinkTap(urlStr: String) {
-        print(urlStr)
+        //print(urlStr)
         guard let url = URL(string: urlStr) else { return }
         #if os(iOS)
 		UIApplication.shared.open(url, options: [:])
@@ -69,7 +75,6 @@ struct MDViewGroup: Identifiable {
         #endif
     }
 }
-
 
 struct RegexMarkdown: Equatable {
     static func == (lhs: RegexMarkdown, rhs: RegexMarkdown) -> Bool {
@@ -89,22 +94,23 @@ struct RegexMarkdown: Equatable {
         guard !matchIn.isEmpty else {
             return string
         }
-        return string.replacingOccurrences(of: self.matchIn, with: self.matchOut, options: .regularExpression)
+        let result = string.replacingOccurrences(of: self.matchIn, with: self.matchOut, options: .regularExpression)
+        //print("RegexMarkdown : outputString : [\(string)][\(self.matchOut)] -> [\(result)]\n")
+        return result
     }
     
     static func url(for string: String) -> String {
         let matcher = try! NSRegularExpression(pattern: #"((http(s)?:\/\/.)?(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*))"#)
         guard let match = matcher.firstMatch(in: string, range: NSRange(location: 0, length: string.utf16.count)) else { return ""}
         let result = string[Range(match.range, in: string)!]
-        print(result)
+        //print(result)
         return String(result)
     }
 }
 
-extension RegexMarkdown {
-    private var matcher: NSRegularExpression {
+fileprivate extension RegexMarkdown {
+    var matcher: NSRegularExpression {
         return try! NSRegularExpression(pattern: self.matchIn)
-        
     }
     func match(string: String, options: NSRegularExpression.MatchingOptions = .init()) -> Bool {
         return self.matcher.numberOfMatches(in: string, options: options, range: NSMakeRange(0, string.utf16.count)) != 0
@@ -112,55 +118,80 @@ extension RegexMarkdown {
 }
 
 enum BaseMarkdownRules: String, CaseIterable, MarkdownRule {
-    
-    
-    case none, header, link, bold, hyperlink, emphasis
+
+    case none
+    case subSubHeader
+    case subHeader
+    case header
+    case link
+    case bold
+    case inLineCode
+    case hyperlink
+    case italic
     var id: String { self.rawValue }
     //
     //    , , del, quote, inline, ul, ol, blockquotes
-    
+
+    /*
+     https://javascript.info/regexp-groups
+     https://regex101.com/
+     Without parentheses, the pattern go+ means g character, followed by o repeated one or more times. For instance, goooo or gooooooooo.
+     Parentheses group characters together, so (go)+ means go, gogo, gogogo and so on.
+     */
     var regex: RegexMarkdown {
         switch self {
+        case .subSubHeader:
+            return RegexMarkdown(matchIn: #"( ### )(.*)"#, matchOut: "$2", strategy: self.subSubHeader)
+        case .subHeader:
+            return RegexMarkdown(matchIn: #"( ## )(.*)"#, matchOut: "$2", strategy: self.subHeader)
         case .header:
-            return .init(matchIn: #"(#+)(.*)"#, matchOut: "$2", strategy: self.header(_:))
+            return RegexMarkdown(matchIn: #"( # )(.*)"#, matchOut: "$2", strategy: self.header(_:))
+        case .inLineCode:
+            return RegexMarkdown(matchIn: #"(\s)(\`)(.+?)\2"#, matchOut: "$3", strategy: self.inLineCode(_:))
         case .link:
-            return .init(matchIn: #"\[([^\[]+)\]\(([^\)]+)\)"#, matchOut: "$1", strategy: self.link(_:))
-        case .bold:
-            return .init(matchIn: #"(\*\*|__)(.*?)\1"#, matchOut: "$2", strategy: self.bold(_:))
+            return RegexMarkdown(matchIn: #"\[([^\[]+)\]\(([^\)]+)\)"#, matchOut: "$1", strategy: self.link(_:))
         case .hyperlink:
-            return .init(matchIn: "<((?i)https?://(?:www\\.)?\\S+(?:/|\\b))>", matchOut: "$1", strategy: self.link(_:))
-        case .emphasis:
-            return .init(matchIn: #"(\s)(\*|_)(.+?)\2"#, matchOut: "$1$3", strategy: self.emphasis(_:))
+            return RegexMarkdown(matchIn: "<((?i)https?://(?:www\\.)?\\S+(?:/|\\b))>", matchOut: "$1", strategy: self.link(_:))
+        case .italic:
+            return RegexMarkdown(matchIn: #"(\s)(\*|_)(.+?)\2"#, matchOut: "$1$3", strategy: self.emphasis(_:))
+        case .bold:
+            return RegexMarkdown(matchIn: #"(\*\*|__)(.*?)\1"#, matchOut: "$2", strategy: self.bold(_:))
         case .none:
-            return .init(matchIn: "", matchOut: "", strategy: {$0})
+            return RegexMarkdown(matchIn: "", matchOut: "", strategy: {$0})
         }
     }
     
     func header(_ text: Text) -> Text {
-        return text.font(.headline)
+        return text.font(.largeTitle).bold()//.foregroundColor(Color.red)
     }
-    
+
+    func subHeader(_ text: Text) -> Text {
+        return text.font(.title).bold()//.foregroundColor(Color.blue)
+    }
+
+    func subSubHeader(_ text: Text) -> Text {
+        return text.font(.headline).bold()//.foregroundColor(Color.green)
+    }
+
     func link(_ text: Text) -> Text {
         return text.foregroundColor(.blue)
     }
-    
+
+    func inLineCode(_ text: Text) -> Text {
+        return text
+    }
+
     func bold(_ text: Text) -> Text {
-        return text.bold()
+        return text.font(.body).bold()
     }
     
     func emphasis(_ text: Text) -> Text {
-        return text.italic()
+        return text.font(.body).italic()
     }
 }
-
-func onTapLink(url: String) {
-    
-}
-
-
 //    var rules: [String : ((String) -> AnyView))] {
 //        [
-//            #"/(#+)(.*)/"# -> self.header,                           // headers
+//        #"/(#+)(.*)/"# -> self.header,                              // headers
 //        #"/\[([^\[]+)\]\(([^\)]+)\)/"# -> '<a href=\'\2\'>\1</a>',  // links
 //        #"/(\*\*|__)(.*?)\1/"# -> '<strong>\2</strong>',            // bold
 //        #"/(\*|_)(.*?)\1/"# -> '<em>\2</em>',                       // emphasis
@@ -182,18 +213,18 @@ final class MDTextVM: ObservableObject {
     
     @Published var finalText = Text("")
     
-    var cancellable: Cancellable? = nil { didSet{ oldValue?.cancel() } }
+    var cancellable: Cancellable? = nil { didSet { oldValue?.cancel() } }
     
     func parse(string: String, for markdownRules: [MarkdownRule]) {
         let firstGroup = MDTextGroup(string: string, rules: [BaseMarkdownRules.none])
         cancellable = Just(markdownRules)
-            .map{ rules -> [MDTextGroup] in
+            .map { rules -> [MDTextGroup] in
                 rules.reduce([firstGroup]) { (result, rule) -> [MDTextGroup] in
-                    return result.flatMap{ self.replace(group: $0, for: rule)}
+                    return result.flatMap { self.replace(group: $0, for: rule)}
                 }
         }
         .map { textGroups in
-            textGroups.map{ $0.text}.reduce(Text(""), +)
+            textGroups.map { $0.text}.reduce(Text(""), +)
         }
         .receive(on: RunLoop.main)
         .assign(to: \.finalText, on: self)
@@ -202,22 +233,23 @@ final class MDTextVM: ObservableObject {
     func parseText(string: String, for markdownRules: [MarkdownRule]) -> Text {
         let firstGroup = MDTextGroup(string: string, rules: [BaseMarkdownRules.none])
         let textGroups = markdownRules.reduce([firstGroup]) { (result, rule) -> [MDTextGroup] in
-            return result.flatMap{ self.replace(group: $0, for: rule)}
+            return result.flatMap { self.replace(group: $0, for: rule) }
         }
-        return textGroups.map{ $0.text}.reduce(Text(""), +)
+        return textGroups.map { $0.text}.reduce(Text(""), +)
     }
     
     func parseViews(string: String, for markdownRules: [MarkdownRule]) -> [MDViewGroup] {
         let firstGroup = MDTextGroup(string: string, rules: [BaseMarkdownRules.none])
         let textGroups = markdownRules.reduce([firstGroup]) { (result, rule) -> [MDTextGroup] in
-            return result.flatMap{ self.replace(group: $0, for: rule)}
+            return result.flatMap { self.replace(group: $0, for: rule)}
         }
         
         guard let firstViewGroup = textGroups.first?.viewType else { return [] }
         
         let allViewGroups = textGroups.dropFirst().reduce([MDViewGroup(type: firstViewGroup)]) { (viewGroups, textGroup) -> [MDViewGroup] in
             let previous = viewGroups.last!
-            if case .text(let previousText) = previous.type, case .text(let currentText) = textGroup.viewType {
+            if case .text(let previousText) = previous.type,
+                case .text(let currentText) = textGroup.viewType {
                 let updatedText = previousText + currentText
                 return viewGroups.dropLast() + [MDViewGroup(type: .text(updatedText))]
             } else {
@@ -227,24 +259,7 @@ final class MDTextVM: ObservableObject {
         }
         return allViewGroups
     }
-    
-    func replaceLInk(for textGroup: MDTextGroup) -> AnyView {
-        return Button(action: {
-            guard let url = URL(string: textGroup.string) else { return }
-            #if os(iOS)
-			UIApplication.shared.open(url, options: [:])
-            #elseif os(macOS)
-            NSWorkspace.shared.open(url)
-            #endif
-        }, label: {textGroup.text})
-            .ereaseToAnyView()
-        //
-        //        return textGroup.text.onTapGesture {
-        //                        guard let url = URL(string: textGroup.string) else { return }
-        //                        UIApplication.shared.open(url, options: [:])
-        //        }.ereaseToAnyView()
-    }
-    
+
     func replace(group: MDTextGroup, for rule: MarkdownRule) -> [MDTextGroup] {
         let string = group.string
         guard let regex = try? NSRegularExpression(pattern: rule.regex.matchIn)
@@ -252,7 +267,7 @@ final class MDTextVM: ObservableObject {
                 return [group]
         }
         let matches = regex.matches(in: string, range: NSRange(0..<string.utf16.count))
-        let ranges = matches.map{ $0.range}
+        let ranges = matches.map { $0.range}
         guard !ranges.isEmpty else {
             return [group]
         }
@@ -266,7 +281,7 @@ final class MDTextVM: ObservableObject {
             return [MDTextGroup(string: nonMatchStr, rules: group.rules)]
             } ?? []
         
-        let resultGroups: [MDTextGroup] =  zippedRanges.flatMap{ (next, current) -> [MDTextGroup] in
+        let resultGroups: [MDTextGroup] =  zippedRanges.flatMap { (next, current) -> [MDTextGroup] in
             guard let range = Range(current, in: string) else { return [] }
             let matchStr = String(string[range])
 
@@ -278,7 +293,7 @@ final class MDTextVM: ObservableObject {
             return groups
         }
         
-        let lastMatch = ranges.last.flatMap{ range -> [MDTextGroup] in
+        let lastMatch = ranges.last.flatMap { range -> [MDTextGroup] in
             guard let index = Range(range, in: string) else { return [] }
             let matchStr = String(string[index])
             return [MDTextGroup(string: matchStr, rules: group.rules + [rule])]
@@ -295,17 +310,12 @@ final class MDTextVM: ObservableObject {
             let nonMatchStr = String(string[lowerBound..<upperBound])
             return [MDTextGroup(string: nonMatchStr, rules: group.rules)]
             } ?? []
-        
-        
+
         let completeGroups = beforeMatchesGroup + resultGroups + lastMatch + afterMatchesGroup
         return completeGroups
     }
     
 }
-
-
-
-
 
 public struct MDText: View, Equatable {
     public static func == (lhs: MDText, rhs: MDText) -> Bool {
@@ -314,34 +324,35 @@ public struct MDText: View, Equatable {
     
     var markdown: String
     var alignment: HorizontalAlignment
-    
     var rules: [MarkdownRule] = BaseMarkdownRules.allCases
     
     @ObservedObject var vm = MDTextVM()
     
     public init(markdown: String, alignment: HorizontalAlignment = .leading) {
-        self.markdown = markdown
+        var escaped = markdown.replacingOccurrences(of: "\n#", with: "\n #") // Hack to deal with header, subHeader and subSubHeader
+        if escaped.hasPrefix("# ") {
+            escaped = " \(escaped)"
+        }
+        self.markdown = escaped
         self.alignment = alignment
     }
     
     var views: [MDViewGroup] {
-        vm.parseViews(string: markdown, for: rules)
+        let result = vm.parseViews(string: markdown, for: rules)
+        result.forEach { (some) in
+            print("TYPE: \(some.type)")
+        }
+        return result
     }
     
     public var body: some View {
         VStack(alignment: alignment) {
             HStack { Spacer() }
-            //            vm.parseText(string: markdown, for: rules)
             ForEach(self.views, id: \.id) { viewGroup in
                 viewGroup.view
             }
         }
-        //        .onAppear(perform: parse)
     }
-    
-    //    func parse() {
-    //        vm.parse(string: markdown, for: rules)
-    //    }
 }
 
 extension View {
@@ -349,3 +360,72 @@ extension View {
         AnyView(self)
     }
 }
+
+struct MDTextSampleView: View {
+    var markdown =
+    """
+    ** Hello MDText **
+    """
+
+    var body: some View {
+        ScrollView {
+            MDText(markdown: sampleMD).padding()
+        }
+    }
+}
+
+struct MDTextSampleView_Previews: PreviewProvider {
+    static var previews: some View {
+        MDTextSampleView()
+    }
+}
+
+private let sampleMD = """
+ # Title
+
+ ## Subtitle
+
+ ### SubSubtitle
+
+this is `in line code`, weeeee
+
+__Bold__: With imperative programming
+
+_Italic_: With declarative programming
+
+__Combine = Publishers + _Subscribers_ + Operators__
+
+----
+
+ # Title
+
+ ## Subtitle
+
+ ### SubSubtitle
+
+this is `in line code`, weeeee
+
+__Bold__: With imperative programming
+
+_Italic_: With declarative programming
+
+__Combine = Publishers + _Subscribers_ + Operators__
+
+----
+
+ # Title
+
+ ## Subtitle
+
+ ### SubSubtitle
+
+this is `in line code`, weeeee
+
+__Bold__: With imperative programming
+
+_Italic_: With declarative programming
+
+__Combine = Publishers + _Subscribers_ + Operators__
+
+----
+"""
